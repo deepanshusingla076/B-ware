@@ -2,14 +2,6 @@ jest.mock('../config/db');
 jest.mock('../config/redis');
 jest.mock('../services/firebaseAdmin');
 jest.mock('../services/nlpService');
-jest.mock('rate-limit-redis', () => ({
-  default: class MockStore {
-    increment = jest.fn().mockResolvedValue({ totalHits: 1, resetTime: new Date() });
-    decrement = jest.fn();
-    resetKey = jest.fn();
-    resetAll = jest.fn();
-  },
-}));
 
 const request = require('supertest');
 const app = require('../server');
@@ -156,6 +148,7 @@ describe('Trending API', () => {
 
     it('returns 403 for a regular (non-admin) user', async () => {
       mockToken('user');
+      db.query.mockResolvedValueOnce([[{ role: 'user' }]]);
       const res = await request(app)
         .post('/api/trending/refresh')
         .set('Authorization', 'Bearer fake-token');
@@ -170,7 +163,8 @@ describe('Trending API', () => {
       const axios = require('axios');
       jest.spyOn(axios, 'get').mockResolvedValue({ data: { articles: [], claims: [] } });
 
-      db.query.mockResolvedValue([[]]); // dedup + deactivate queries
+      // First query: admin role check; later queries: refresh internals
+      db.query.mockResolvedValue([[{ role: 'admin' }]]);
 
       const res = await request(app)
         .post('/api/trending/refresh')

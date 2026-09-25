@@ -42,12 +42,10 @@ export default function LandingPage() {
       <TopNav />
       <main className="relative">
 
-        {/* ── Hero (Video Only) ────────────────────────────────────────── */}
         <section className="min-h-screen pt-16 relative overflow-hidden flex items-center justify-center">
           <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/10 to-transparent pointer-events-none" />
         </section>
 
-        {/* ── Hero Content ──────────────────────────────────────────────── */}
         <FadeInSection className="bg-white py-32 px-8 md:px-24 relative overflow-hidden">
           <div className="max-w-4xl mx-auto text-center">
             <h2 className="text-7xl md:text-7xl font-display italic leading-[0.9] tracking-tighter text-zinc-900 mb-12">
@@ -91,7 +89,6 @@ export default function LandingPage() {
           </div>
         </FadeInSection>
 
-        {/* ── Forensic Engine Overview ─────────────────────────────────── */}
         <FadeInSection className="bg-surface-container-low py-32 px-8 border-y border-zinc-200">
           <div className="max-w-7xl mx-auto">
             <div className="flex flex-col md:flex-row justify-between items-baseline mb-20 gap-8">
@@ -139,7 +136,6 @@ export default function LandingPage() {
           </div>
         </FadeInSection>
 
-        {/* ── Case Study ───────────────────────────────────────────────── */}
         <div className="bg-white" id="case-study">
           <FadeInSection className="py-32 px-8">
             <div className="max-w-7xl mx-auto">
@@ -157,7 +153,6 @@ export default function LandingPage() {
             </div>
           </FadeInSection>
 
-          {/* ── Horizontal Scrolling Tiers Container ────────────────────────── */}
           <div ref={tiersContainerRef} className="overflow-hidden bg-white">
             <div
               ref={tiersSectionsRef}
@@ -354,7 +349,6 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* ── Discrepancy Visual ───────────────────────────────────────── */}
         <FadeInSection className="py-32 bg-surface-container-highest px-8">
           <div className="max-w-7xl mx-auto">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-20 items-center">
@@ -409,7 +403,6 @@ export default function LandingPage() {
           </div>
         </FadeInSection>
 
-        {/* ── CTA ─────────────────────────────────────────────────────── */}
         <FadeInSection className="bg-inverse-surface py-32 px-8 text-surface">
           <div className="max-w-4xl mx-auto text-center">
             <h2 className="text-5xl md:text-8xl font-display italic mb-12 leading-tight">
@@ -435,7 +428,6 @@ export default function LandingPage() {
         </FadeInSection>
       </main>
 
-      {/* ── Footer ──────────────────────────────────────────────────── */}
       <footer className="bg-black py-20 px-8 border-t border-white/5 relative z-10">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start gap-12">
           <div className="space-y-8 max-w-sm">

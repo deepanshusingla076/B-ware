@@ -109,7 +109,6 @@ export default function RegisterPage() {
       <main className="pt-16 min-h-screen">
         <div className="max-w-[1440px] mx-auto px-8 py-20">
 
-          {/* ── Email Verification Banner ── */}
           {registered && (
             <div className="max-w-xl mx-auto">
               <div className="bg-surface-container-lowest border-2 border-primary p-12 text-center">

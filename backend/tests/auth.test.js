@@ -3,16 +3,6 @@ jest.mock("../config/db");
 jest.mock("../config/redis");
 jest.mock("../services/firebaseAdmin");
 jest.mock("../services/emailService");
-jest.mock("rate-limit-redis", () => ({
-  default: class MockStore {
-    increment = jest
-      .fn()
-      .mockResolvedValue({ totalHits: 1, resetTime: new Date() });
-    decrement = jest.fn();
-    resetKey = jest.fn();
-    resetAll = jest.fn();
-  },
-}));
 
 const request = require("supertest");
 const app = require("../server");

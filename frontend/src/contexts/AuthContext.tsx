@@ -8,14 +8,12 @@ import {
   signInWithPopup,
   signOut,
   updateProfile,
-  sendPasswordResetEmail as firebaseSendPasswordReset,
   type User as FirebaseUser,
 } from 'firebase/auth';
 import { auth, googleProvider } from '@/lib/firebase';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
 export interface User {
   id?: number;
   firebase_uid: string;
@@ -41,7 +39,6 @@ export interface AuthContextType {
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// ─── Helper: sync Firebase user to MySQL via backend ─────────────────────────
 async function syncToBackend(firebaseUser: FirebaseUser): Promise<User | null> {
   try {
     const idToken = await firebaseUser.getIdToken();
@@ -56,18 +53,16 @@ async function syncToBackend(firebaseUser: FirebaseUser): Promise<User | null> {
     const data = await res.json();
     return data.user ?? null;
   } catch (err) {
-    console.error('[AuthContext] syncToBackend failed:', err);
+    console.error('syncToBackend failed:', err);
     return null;
   }
 }
 
-// ─── Provider ────────────────────────────────────────────────────────────────
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Listen to Firebase auth state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       setIsLoading(true);
@@ -77,10 +72,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (profile) {
           setUser(profile);
         } else {
-          // Fallback to Firebase user data if backend sync fails
           setUser({
             firebase_uid: fbUser.uid,
-            name: fbUser.displayName || fbUser.email?.split('@')[0] || 'Analyst',
+            name: fbUser.displayName || fbUser.email?.split('@')[0] || 'User',
             email: fbUser.email || '',
             avatar_url: fbUser.photoURL,
             role: 'user',
@@ -96,7 +90,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
-  // Get current Firebase ID token (auto-refreshed)
   const getIdToken = useCallback(async (): Promise<string | null> => {
     if (!firebaseUser) return null;
     try {
@@ -106,54 +99,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [firebaseUser]);
 
-  // Email/password login
   const login = useCallback(async (email: string, password: string) => {
     setIsLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // onAuthStateChanged will handle the rest
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  // Email/password registration
   const register = useCallback(async (name: string, email: string, password: string) => {
     setIsLoading(true);
     try {
       const { user: fbUser } = await createUserWithEmailAndPassword(auth, email, password);
-      // Set display name in Firebase profile
       await updateProfile(fbUser, { displayName: name });
-      // Force token refresh so displayName is in the token
       await fbUser.getIdToken(true);
-      // onAuthStateChanged will fire and sync to backend
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  // Google Sign-In
   const loginWithGoogle = useCallback(async () => {
     setIsLoading(true);
     try {
       await signInWithPopup(auth, googleProvider);
-      // onAuthStateChanged handles the rest
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  // Logout
   const logout = useCallback(async () => {
     setIsLoading(true);
     try {
-      // Tell backend to revoke Firebase refresh tokens + blacklist Redis session
       if (firebaseUser) {
         const idToken = await firebaseUser.getIdToken();
         await fetch(`${API_BASE_URL}/auth/logout`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${idToken}` },
-        }).catch(() => {}); // Non-fatal if backend is down
+        }).catch(() => {});
       }
       await signOut(auth);
     } finally {
@@ -163,9 +146,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [firebaseUser]);
 
-  // Forgot password — uses Firebase to generate reset email
   const forgotPassword = useCallback(async (email: string) => {
-    // Use backend (Nodemailer) for branded email
     const res = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

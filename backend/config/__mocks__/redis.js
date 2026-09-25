@@ -10,6 +10,7 @@ const mockRedis = {
   mget: jest.fn().mockResolvedValue([]),
   call: jest.fn().mockResolvedValue(null),
   keys: jest.fn().mockResolvedValue([]),
+  isAvailable: jest.fn().mockReturnValue(true),
 };
 
 module.exports = mockRedis;

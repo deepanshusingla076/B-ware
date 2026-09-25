@@ -1,20 +1,31 @@
-const db = require("../config/db"); // mysql connection
-const redis = require("../config/redis"); // redis used for caching
-const nlp = require("../services/nlpService"); // service to call NLP verification api
-const axios = require("axios"); // used to fetch news from NewsAPI
-const crypto = require("crypto"); // used to hash url
+const db = require("../config/db");
+const redis = require("../config/redis");
+const nlp = require("../services/nlpService");
+const axios = require("axios");
+const crypto = require("crypto");
 
-// Convert ISO 8601 string (e.g. "2026-05-02T07:11:27Z") to MySQL DATETIME format
 function normalizeDate(dateStr) {
   if (!dateStr) return null;
   try {
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return null;
-    // Format: "YYYY-MM-DD HH:MM:SS"
     return d.toISOString().slice(0, 19).replace("T", " ");
   } catch {
     return null;
   }
+}
+
+/** Map NewsAPI / FactCheck publisher names onto outlet preference labels. */
+function normalizeOutletName(name) {
+  if (!name) return "Unknown";
+  const n = String(name).toLowerCase();
+  if (n.includes("bbc")) return "BBC";
+  if (n.includes("reuters")) return "Reuters";
+  if (n.includes("bloomberg")) return "Bloomberg";
+  if (n.includes("guardian")) return "The Guardian";
+  if (n.includes("wall street") || n.includes("wsj")) return "Wall Street Journal";
+  if (n.includes("financial times") || n === "ft") return "Financial Times";
+  return name;
 }
 
 /*
@@ -73,7 +84,7 @@ exports.getTrending = async (req, res) => {
         sources = outlets.map(o => o.outlet_name);
       }
     } catch (err) {
-      console.log("Could not fetch user outlets, using all sources");
+      console.error("Could not fetch user outlets, using all sources:", err.message);
     }
   }
 
@@ -138,8 +149,12 @@ exports.getTrending = async (req, res) => {
       sources_filter: sources || null,
     };
 
-    // cache for 5 minutes
-    await redis.set(cacheKey, JSON.stringify(result), "EX", 300);
+    // cache for 5 minutes (non-fatal if Redis is down)
+    try {
+      await redis.set(cacheKey, JSON.stringify(result), "EX", 300);
+    } catch {
+      /* Redis unavailable */
+    }
 
     res.json(result);
   } catch (err) {
@@ -199,10 +214,8 @@ exports.getTrendingById = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // GET LIVE FEED — fetches directly from NewsAPI + Google Fact Check (no DB)
 // Returns real-time news cards and fact-check results for the trending page
-// ─────────────────────────────────────────────────────────────────────────────
 exports.getLiveFeed = async (req, res) => {
   const cacheKey = 'trending_live_feed';
 
@@ -215,7 +228,6 @@ exports.getLiveFeed = async (req, res) => {
   const newsItems = [];
   const factCheckItems = [];
 
-  // ── 1. NewsAPI ──────────────────────────────────────────────────────────────
   if (process.env.NEWS_API_KEY) {
     try {
       const { data } = await axios.get('https://newsapi.org/v2/everything', {
@@ -246,7 +258,6 @@ exports.getLiveFeed = async (req, res) => {
     }
   }
 
-  // ── 2. Google Fact Check API ────────────────────────────────────────────────
   if (process.env.GOOGLE_FACT_CHECK_API_KEY) {
     const queries = ['petrol price India', 'India election', 'India economy', 'unemployment India'];
 
@@ -301,13 +312,15 @@ exports.getLiveFeed = async (req, res) => {
 
 // manual refresh endpoint (admin only)
 exports.refreshTrending = async (req, res) => {
-  if (req.user.role !== "admin") {
-    return res.status(403).json({
-      error: "Admin only",
-    });
-  }
-
   try {
+    const [rows] = await db.query(
+      "SELECT role FROM users WHERE firebase_uid = ? LIMIT 1",
+      [req.user.uid],
+    );
+    if (!rows.length || rows[0].role !== "admin") {
+      return res.status(403).json({ error: "Admin only" });
+    }
+
     const count = await runTrendingRefresh();
 
     res.json({
@@ -358,7 +371,7 @@ async function runTrendingRefresh() {
         for (const a of data.articles || []) {
           articles.push({
             headline: a.title,
-            source_name: a.source?.name || "Unknown",
+            source_name: normalizeOutletName(a.source?.name),
             source_url: a.url,
             published_at: a.publishedAt,
             content: a.description || a.title,
@@ -367,8 +380,6 @@ async function runTrendingRefresh() {
       } catch (err) {
         console.error("NewsAPI fetch failed:", err.message);
       }
-    } else {
-      console.log("NEWS_API_KEY not set — skipping news fetch");
     }
     return articles;
   }
@@ -377,7 +388,6 @@ async function runTrendingRefresh() {
   async function fetchFromGoogleFactCheck() {
     const items = [];
     if (!process.env.GOOGLE_FACT_CHECK_API_KEY) {
-      console.log("GOOGLE_FACT_CHECK_API_KEY not set — skipping");
       return items;
     }
     try {
@@ -393,16 +403,16 @@ async function runTrendingRefresh() {
           timeout: 10000,
         },
       );
-      // convert api response to our article format
+      // convert api response to our article format (Google Fact Check shape)
       for (const claim of data.claims || []) {
         const review = claim.claimReview?.[0];
-        if (!review) continue;
+        if (!review?.url) continue;
         items.push({
-          headline: claim.title,
-          source_name: claim.source?.name || "Unknown",
-          source_url: claim.url,
-          published_at: claim.publishedAt,
-          content: claim.description || claim.title,
+          headline: claim.text || review.title || "Fact-checked claim",
+          source_name: normalizeOutletName(review.publisher?.name) || "Fact Check",
+          source_url: review.url,
+          published_at: claim.claimDate || review.reviewDate || null,
+          content: claim.text || review.title || "",
         });
       }
     } catch (err) {
@@ -435,7 +445,6 @@ async function runTrendingRefresh() {
   }
 
   let processed = 0;
-  console.log(`Articles from NewsAPI+FactCheck: ${articles.length}, Fresh: ${fresh.length}`);
 
   // process each new article
   for (const article of fresh) {
@@ -485,7 +494,7 @@ async function runTrendingRefresh() {
         }
       } catch (nlpErr) {
         // NLP failed (cold start / timeout) — save article without NLP enrichment
-        console.log(`  NLP unavailable for "${article.headline?.slice(0, 50)}", saving without analysis`);
+        console.error(`NLP unavailable for trending article, saving without analysis: ${nlpErr.message}`);
       }
 
       const score = calcDangerScore(verdict, confidence, article.published_at, 1);
@@ -523,7 +532,6 @@ async function runTrendingRefresh() {
     }
   }
 
-  console.log(`Processed: ${processed} out of ${fresh.length} fresh articles.`);
   // deactivate stories older than 48 hours
   await db.query(
     "UPDATE trending_stories SET is_active = 0 WHERE fetched_at < DATE_SUB(NOW(), INTERVAL 48 HOUR)",
@@ -538,8 +546,6 @@ async function runTrendingRefresh() {
       await pipeline.exec();
     }
   } catch { /* redis down */ }
-
-  console.log(`Trending refresh done: ${processed} new stories`);
 
   return processed;
 }

@@ -1,29 +1,36 @@
-const cron = require("node-cron"); // library to run scheduled jobs
-const redis = require("../config/redis"); 
-const { runTrendingRefresh } = require("../controllers/trendingController"); // function that refreshes trending stories
+const cron = require("node-cron");
+const redis = require("../config/redis");
+const { runTrendingRefresh } = require("../controllers/trendingController");
 
-// schedule cron job to run once a day (at midnight)
-cron.schedule("0 0 * * *", async () => {
+async function refreshWithLock(label) {
+  let lock = null;
 
-  // create a redis lock so multiple cron jobs don't run at the same time
-  const lock = await redis.set("trending_job_lock", "1", "NX", "EX", 300);
+  try {
+    lock = await redis.set("trending_job_lock", "1", "NX", "EX", 300);
+  } catch (err) {
+    console.warn(`${label}: Redis lock unavailable:`, err.message);
+    lock = "1";
+  }
 
-  // if lock already exists, exit (another job is running)
   if (!lock) return;
 
   try {
-    // run the trending refresh process
     await runTrendingRefresh();
-
   } catch (err) {
-    // log error if something fails
-    console.error("trending cron:", err.message);
-
+    console.error(`${label}:`, err.message);
   } finally {
-    // remove lock after job finishes
-    await redis.del("trending_job_lock");
-
+    try {
+      await redis.del("trending_job_lock");
+    } catch {}
   }
-});
+}
 
-console.log("trending cron scheduled (once a day)");
+// Daily at midnight
+cron.schedule("0 0 * * *", () => refreshWithLock("trending cron"));
+
+// Local/demo: also refresh shortly after boot so Trending is not empty
+if (process.env.NODE_ENV !== "production") {
+  setTimeout(() => refreshWithLock("trending startup"), 8000);
+}
+
+console.log("trending cron scheduled (daily + startup refresh in non-production)");

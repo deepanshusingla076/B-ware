@@ -32,46 +32,31 @@ function DashboardContent() {
     setError('');
     setIsLoading(true);
     setResult(null);
-    
-    console.log("🔹 Batch verify triggered");
-    console.log("   Text length:", claimText.length);
 
     try {
-      // Split by newlines and filter empty lines
       const claims = claimText
         .split('\n')
         .map((c) => c.trim())
         .filter((c) => c.length > 0);
 
-      console.log("   Claims count:", claims.length);
-      console.log("   Claims:", claims);
-
       if (claims.length === 0) {
-        const msg = 'Please enter at least one claim (one per line)';
-        setError(msg);
+        setError('Please enter at least one claim (one per line)');
         setIsLoading(false);
-        console.log("❌", msg);
         return;
       }
 
       if (claims.length > 50) {
-        const msg = 'Maximum 50 claims per batch';
-        setError(msg);
+        setError('Maximum 50 claims per batch');
         setIsLoading(false);
-        console.log("❌", msg);
         return;
       }
 
-      console.log("📤 Calling API...");
       const response = await claimsApi.batch(claims);
-      console.log("✅ Response received:", response);
       setBatchResults(response);
       setIsBatchMode(true);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Batch verification failed. Please try again.';
       setError(message);
-      console.error("❌ Batch error:", message);
-      console.error("Full error:", err);
     } finally {
       setIsLoading(false);
     }

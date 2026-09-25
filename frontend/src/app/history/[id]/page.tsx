@@ -135,7 +135,7 @@ function ClaimDetailContent() {
                 <div className="bg-surface-container-low border border-surface-container-high p-6">
                   <p className="text-[9px] uppercase tracking-widest text-on-surface-variant font-bold mb-2">% Error</p>
                   <p className="text-2xl font-black text-on-surface">
-                    {claim.pct_error != null ? `${parseFloat(claim.pct_error).toFixed(1)}%` : 'N/A'}
+                    {claim.percentage_error != null ? `${parseFloat(claim.percentage_error).toFixed(1)}%` : 'N/A'}
                   </p>
                 </div>
               </section>

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { trendingApi, outletsApi, claimsApi } from '@/services/api';
 import { useAuth } from '@/hooks/useAuth';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
 
 // Rating badge color
 function RatingBadge({ rating }: { rating: string }) {
@@ -148,7 +149,6 @@ function TrendingContent() {
   };
 
   const handleVerifyClaim = async (story: any) => {
-    console.log('Verify button clicked, story:', story);
     setVerifyingStoryId(story.id);
     setIsVerifying(true);
     setVerificationError('');
@@ -156,13 +156,10 @@ function TrendingContent() {
 
     try {
       const text = (story.claim_text || story.headline || '') as string;
-      console.log('Sending verification request with text:', text);
       const result = await claimsApi.verify(text);
-      console.log('Verification result:', result);
       setVerificationResult(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to verify claim';
-      console.error('Verification error:', err);
       setVerificationError(message);
     } finally {
       setIsVerifying(false);
@@ -389,7 +386,6 @@ function TrendingContent() {
           )}
         </div>
 
-        {/* ── Live News + Fact Check Feed ───────────────────────────────────────── */}
         <div className="mt-20">
           {/* Section Header + Tabs */}
           <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 border-b border-surface-container-highest pb-4 gap-4">
@@ -494,7 +490,6 @@ function TrendingContent() {
               </div>
             )
           ) : (
-            // ── Fact Check Tab ───────────────────────────────────────────────────
             factChecks.length === 0 ? (
               <div className="text-center py-12 text-on-surface-variant">
                 <p className="text-sm">No fact checks available. Check GOOGLE_FACT_CHECK_API_KEY in backend .env.</p>
@@ -661,15 +656,15 @@ function TrendingContent() {
                   )}
 
                   {/* Metrics */}
-                  {(verificationResult.official_value || verificationResult.extracted_value) && (
+                  {(verificationResult.official_value != null || verificationResult.claimed_value != null) && (
                     <div className="grid grid-cols-2 gap-4 p-4 bg-surface-container-low rounded">
                       <div>
                         <p className="text-[10px] font-bold uppercase text-on-surface-variant">Official Value</p>
-                        <p className="text-lg font-bold">{verificationResult.official_value || 'N/A'}</p>
+                        <p className="text-lg font-bold">{verificationResult.official_value ?? 'N/A'}</p>
                       </div>
                       <div>
                         <p className="text-[10px] font-bold uppercase text-on-surface-variant">Claimed Value</p>
-                        <p className="text-lg font-bold">{verificationResult.extracted_value || 'N/A'}</p>
+                        <p className="text-lg font-bold">{verificationResult.claimed_value ?? 'N/A'}</p>
                       </div>
                     </div>
                   )}
@@ -692,6 +687,8 @@ function TrendingContent() {
 
 export default function TrendingPage() {
   return (
-    <TrendingContent />
+    <ProtectedRoute>
+      <TrendingContent />
+    </ProtectedRoute>
   );
 }

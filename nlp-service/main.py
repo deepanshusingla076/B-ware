@@ -1,21 +1,8 @@
 """
-main.py — The FastAPI Application
+FastAPI NLP service for B-ware claim extraction and verification.
 
-Entry point of the NLP service. Exposes the extraction logic as HTTP API endpoints.
-The Node.js backend will POST claims here, and we return extracted metric/value/year.
-
-To run:
-    uvicorn main:app --reload --port 5001
-
-    Breakdown:
-      uvicorn       → the ASGI server (like nodemon for Python)
-      main:app      → "in the file main.py, find the variable called app"
-      --reload      → auto-restart on file changes (like nodemon)
-      --port 5001   → listen on port 5001 (backend is on 5000)
-
-Swagger docs: http://localhost:5001/docs
-
-VERSION: 1.1.0 - Groq LLM integration
+  uvicorn main:app --reload --port 5001
+  Docs: http://localhost:5001/docs
 """
 import asyncio
 import logging
@@ -786,7 +773,7 @@ async def verify_quick(request: ClaimRequest):
     **Limitations of /verify/quick:**
     - Only works for numeric claims with a recognisable metric + year.
     - Uses World Bank data only (quarterly/annual, may lag by 1–2 years).
-    - For qualitative claims or deeper analysis, use `POST /verify` (coming soon).
+    - For qualitative claims or deeper analysis, use `POST /verify`.
     """
     # Step 1: Extract structured fields from the raw text
     extraction = extract_all(request.text)
@@ -893,7 +880,7 @@ async def verify_full(request: ClaimRequest):
     try:
         result: VerificationResult = await asyncio.wait_for(
             route_verification(clean_text, force_tier3=False),
-            timeout=30.0,
+            timeout=180.0,
         )
     except asyncio.TimeoutError:
         logger.warning("verify_full timed out for text: %.80s", clean_text)
@@ -907,7 +894,7 @@ async def verify_full(request: ClaimRequest):
             extracted_year=None,
             extraction_confidence=0.0,
             evidence=[],
-            explanation="Verification timed out after 30 seconds.",
+            explanation="Verification timed out after 180 seconds.",
             tiers_run=[],
         )
     return FullVerificationResult(
@@ -965,7 +952,7 @@ async def verify_deep(request: Request, body: ClaimRequest):
     try:
         result: VerificationResult = await asyncio.wait_for(
             route_verification(clean_text, force_tier3=True),
-            timeout=30.0,
+            timeout=180.0,
         )
     except asyncio.TimeoutError:
         logger.warning("verify_deep timed out for text: %.80s", clean_text)
@@ -979,7 +966,7 @@ async def verify_deep(request: Request, body: ClaimRequest):
             extracted_year=None,
             extraction_confidence=0.0,
             evidence=[],
-            explanation="Verification timed out after 30 seconds.",
+            explanation="Verification timed out after 180 seconds.",
             tiers_run=[],
         )
     return FullVerificationResult(

@@ -1,10 +1,8 @@
-const crypto = require("crypto"); // node module for hashing
-const db = require("../config/db"); // mysql database connection
-const redis = require("../config/redis"); // redis used for caching results
-const nlp = require("../services/nlpService"); // service which calls NLP verification API
+const crypto = require("crypto");
+const db = require("../config/db");
+const redis = require("../config/redis");
+const nlp = require("../services/nlpService");
 
-// Auto-upsert Firebase user into MySQL so claims FK never fails
-// Safe to call every time — uses INSERT IGNORE to avoid duplicates
 async function ensureUserExists(user) {
   if (!user?.uid) return;
   try {
@@ -12,15 +10,13 @@ async function ensureUserExists(user) {
       `INSERT INTO users (firebase_uid, email, name, role, created_at)
        VALUES (?, ?, ?, 'user', NOW())
        ON DUPLICATE KEY UPDATE last_seen_at = NOW()`,
-      [user.uid, user.email || null, user.name || null]
+      [user.uid, user.email || null, user.name || null],
     );
   } catch (e) {
-    // Non-fatal — log and continue; claim will store user_id as NULL if FK fails
-    console.warn("[ensureUserExists] Could not upsert user:", e.message);
+    console.warn("[ensureUserExists]", e.message);
   }
 }
 
-// create hash of claim text so we can cache same claim results
 function hashText(text) {
   return crypto
     .createHash("sha256")
@@ -28,98 +24,72 @@ function hashText(text) {
     .digest("hex");
 }
 
-// this function is used by all verify routes
-// only endpoint changes (normal / quick / deep verify)
+function isNlpUnavailable(err) {
+  const msg = String(err?.message || "");
+  return (
+    !err?.status ||
+    /timeout|ECONNREFUSED|ECONNRESET|socket hang up|Network Error/i.test(msg)
+  );
+}
+
 async function runVerify(req, res, endpoint) {
   const text = req.body.text?.trim();
 
-  // basic validation for claim text
   if (!text || text.length < 5) {
-    return res
-      .status(400)
-      .json({ error: "Claim text too short (min 5 chars)" });
+    return res.status(400).json({ error: "Claim text too short (min 5 chars)" });
   }
-
   if (text.length > 2000) {
-    return res
-      .status(400)
-      .json({ error: "Claim text too long (max 2000 chars)" });
+    return res.status(400).json({ error: "Claim text too long (max 2000 chars)" });
   }
 
   const userId = req.user?.uid || null;
   const hash = hashText(text);
 
-  // check if result already exists in redis cache
-  let cached = null;
   try {
-    cached = await redis.get(`claim_result:${hash}`);
-  } catch {
-    /* Redis unavailable — fall through to live verification */
-  }
-
-  if (cached) {
-    try {
-      return res.json({
-        ...JSON.parse(cached),
-        from_cache: true,
-      });
-    } catch {
-      try {
-        await redis.del(`claim_result:${hash}`);
-      } catch {}
+    const cached = await redis.get(`claim_result:${hash}`);
+    if (cached) {
+      return res.json({ ...JSON.parse(cached), from_cache: true });
     }
+  } catch {
+    // redis down — continue without cache
   }
 
   let claimId;
 
   try {
-    // Ensure the Firebase user exists in MySQL before inserting claim
     await ensureUserExists(req.user);
 
-    // first insert claim in database with pending status
     const [ins] = await db.query(
-      "INSERT INTO claims (user_id, original_text, status) VALUES (?, ?, ?)",
-      [userId, text, "pending"],
+      "INSERT INTO claims (user_id, original_text, claim_hash, status) VALUES (?, ?, ?, ?)",
+      [userId, text, hash, "pending"],
     );
-
     claimId = ins.insertId;
 
-    // call NLP verification API
     const { data: r } = await nlp.post(endpoint, { text });
 
-    // get values returned from NLP service
     const verdict = r.verdict;
     const confidence = r.confidence ?? null;
     const tierUsed = r.tier_used ?? "tier1";
     const explanation = r.explanation ?? null;
-
     const officialVal =
       r.official_value ?? r.numeric_check?.official_value ?? null;
-
     const claimedVal =
-      r.extracted_value ?? r.numeric_check?.claimed_value ?? null;
-
+      r.extracted_value ?? r.claimed_value ?? r.numeric_check?.claimed_value ?? null;
     const pctError =
       r.percentage_error ?? r.numeric_check?.percentage_error ?? null;
-
     const metric = r.extracted_metric ?? r.extraction?.metric ?? null;
     const year = r.extracted_year ?? r.extraction?.year ?? null;
-
-    const tiersRun = JSON.stringify(r.tiers_run ?? [tierUsed]);
-    const evidenceJson = JSON.stringify(r.evidence ?? []);
-
-    // calculate difference if both values exist
     const difference =
       officialVal != null && claimedVal != null
         ? Math.abs(officialVal - claimedVal)
         : null;
+    const evidenceJson = JSON.stringify(r.evidence ?? []);
 
-    // store verification details in verification_log table
     await db.query(
       `INSERT INTO verification_log
        (claim_id, official_value, claimed_value, difference, percentage_error,
-        verdict, tier_used, tiers_run, confidence, explanation)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        verdict, tier_used, tiers_run, confidence, explanation, evidence_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         claimId,
         officialVal,
@@ -128,31 +98,29 @@ async function runVerify(req, res, endpoint) {
         pctError,
         verdict,
         tierUsed,
-        tiersRun,
+        JSON.stringify(r.tiers_run ?? [tierUsed]),
         confidence,
         explanation,
+        evidenceJson,
       ],
     );
 
-    // update claim record with extracted data and final verdict
     await db.query(
       `UPDATE claims SET
-        extracted_metric  = ?,
-        extracted_value   = ?,
-        extracted_year    = ?,
-        credibility_score = ?,
-        status            = 'verified'
-      WHERE id = ?`,
+        extracted_metric = ?, extracted_value = ?, extracted_year = ?,
+        credibility_score = ?, verdict = ?, confidence = ?, status = 'verified'
+       WHERE id = ?`,
       [
         metric,
         claimedVal,
         year,
-        confidence ? confidence * 100 : null,
+        confidence != null ? confidence * 100 : null,
+        verdict,
+        confidence,
         claimId,
       ],
     );
 
-    // response object returned to frontend
     const response = {
       claim_id: claimId,
       original_text: text,
@@ -170,47 +138,52 @@ async function runVerify(req, res, endpoint) {
       source_url: r.source_url ?? r.numeric_check?.source_url ?? null,
     };
 
-    // store result in redis for 24 hours
-    await redis.set(
-      `claim_result:${hash}`,
-      JSON.stringify(response),
-      "EX",
-      86400,
-    );
-
-    res.json(response);
-  } catch (err) {
-    // if verification fails update claim status
-    if (claimId) {
-      await db.query("UPDATE claims SET status = 'failed' WHERE id = ?", [
-        claimId,
-      ]);
+    try {
+      await redis.set(
+        `claim_result:${hash}`,
+        JSON.stringify(response),
+        "EX",
+        86400,
+      );
+    } catch {
+      // ignore
     }
 
-    console.error("verify error full:", err);
+    return res.json(response);
+  } catch (err) {
+    console.error("verify failed:", err.message || err);
 
-    // error handling for NLP API responses
+    if (claimId) {
+      try {
+        await db.query("UPDATE claims SET status = 'failed' WHERE id = ?", [
+          claimId,
+        ]);
+      } catch (dbErr) {
+        console.error("could not mark claim failed:", dbErr.message);
+      }
+    }
+
     if (err.status === 422) {
       return res
         .status(422)
         .json({ error: err.nlpDetail || "Invalid claim text" });
     }
-
     if (err.status === 429) {
       return res.status(429).json({ error: "NLP rate limit hit, retry later" });
     }
-
-    if (!err.status || err.message.includes("timeout")) {
-      return res.status(504).json({ error: "NLP Service is starting up (takes up to 5 mins). Please try again in a moment." });
+    if (isNlpUnavailable(err)) {
+      return res.status(503).json({
+        error:
+          "NLP service unavailable. Make sure it is running on port 5001 (start.bat).",
+      });
     }
 
-    res.status(500).json({
-      error: "Verification failed, please try again",
-    });
+    return res
+      .status(500)
+      .json({ error: "Verification failed, please try again" });
   }
 }
 
-// endpoints using same verify logic
 exports.submitClaim = (req, res) => runVerify(req, res, "/verify");
 exports.submitQuick = (req, res) => runVerify(req, res, "/verify/quick");
 exports.submitDeep = (req, res) => runVerify(req, res, "/verify/deep");
@@ -220,19 +193,11 @@ exports.submitBatch = async (req, res) => {
   const claims = req.body.claims || [];
   const userId = req.user.uid;
 
-  console.log("🔹 Batch verify request received");
-  console.log("   Claims count:", claims.length);
-  console.log("   User ID:", userId);
-  console.log("   Body:", JSON.stringify(req.body).slice(0, 100));
-
-  // validation
   if (!Array.isArray(claims) || claims.length === 0) {
-    console.log("❌ Invalid claims array");
     return res.status(400).json({ error: "claims must be non-empty array" });
   }
 
   if (claims.length > 50) {
-    console.log("❌ Too many claims:", claims.length);
     return res.status(400).json({ error: "Maximum 50 claims per batch" });
   }
 
@@ -275,29 +240,22 @@ exports.submitBatch = async (req, res) => {
         } catch {}
       }
 
+      let claimId;
       try {
         // insert claim
         const [ins] = await db.query(
-          "INSERT INTO claims (user_id, original_text, status) VALUES (?, ?, ?)",
-          [userId, text, "pending"]
+          "INSERT INTO claims (user_id, original_text, claim_hash, status) VALUES (?, ?, ?, ?)",
+          [userId, text, hash, "pending"]
         );
 
-        const claimId = ins.insertId;
+        claimId = ins.insertId;
 
-        // call NLP with timeout handling
-        console.log(`   📤 Calling NLP for: "${text.slice(0, 50)}..."`);
         let r;
         try {
-          const nlpResp = await Promise.race([
-            nlp.post("/verify", { text }),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error("NLP request timeout (30s)")), 30000)
-            )
-          ]);
+          const nlpResp = await nlp.post("/verify", { text });
           r = nlpResp.data;
-          console.log(`   ✅ NLP response received`);
         } catch (nlpErr) {
-          console.log(`   ❌ NLP error: ${nlpErr.message}`);
+          console.error(`NLP batch verify failed: ${nlpErr.message}`);
           throw nlpErr;
         }
 
@@ -328,6 +286,7 @@ exports.submitBatch = async (req, res) => {
           r.extraction?.year ?? null;
 
         const tiersRun = JSON.stringify(r.tiers_run ?? [tierUsed]);
+        const evidenceJson = JSON.stringify(r.evidence ?? []);
 
         const difference =
           officialVal != null && claimedVal != null
@@ -338,8 +297,8 @@ exports.submitBatch = async (req, res) => {
         await db.query(
           `INSERT INTO verification_log
            (claim_id, official_value, claimed_value, difference, percentage_error,
-            verdict, tier_used, tiers_run, confidence, explanation)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            verdict, tier_used, tiers_run, confidence, explanation, evidence_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             claimId,
             officialVal,
@@ -351,6 +310,7 @@ exports.submitBatch = async (req, res) => {
             tiersRun,
             confidence,
             explanation,
+            evidenceJson,
           ]
         );
 
@@ -361,13 +321,17 @@ exports.submitBatch = async (req, res) => {
             extracted_value   = ?,
             extracted_year    = ?,
             credibility_score = ?,
+            verdict           = ?,
+            confidence        = ?,
             status            = 'verified'
           WHERE id = ?`,
           [
             metric,
             claimedVal,
             year,
-            confidence ? confidence * 100 : null,
+            confidence != null ? confidence * 100 : null,
+            verdict,
+            confidence,
             claimId,
           ]
         );
@@ -401,8 +365,14 @@ exports.submitBatch = async (req, res) => {
 
         results.push(result);
       } catch (err) {
-        // if one claim fails, still include it with error
-        console.error(`   ❌ Claim failed: ${err.message}`);
+        console.error(`Batch claim failed: ${err.message}`);
+        if (claimId) {
+          try {
+            await db.query("UPDATE claims SET status = 'failed' WHERE id = ?", [
+              claimId,
+            ]);
+          } catch {}
+        }
         results.push({
           original_text: text,
           error: err.message || "Verification failed for this claim",
@@ -470,7 +440,7 @@ exports.getClaimById = async (req, res) => {
       `SELECT c.*,
               v.official_value, v.claimed_value, v.difference, v.percentage_error,
               v.tier_used, v.tiers_run, v.confidence AS vlog_confidence,
-              v.explanation, v.verified_at
+              v.explanation, v.evidence_json, v.verified_at
        FROM claims c
        LEFT JOIN verification_log v ON v.claim_id = c.id
        WHERE c.id = ? AND c.user_id = ?`,
@@ -552,7 +522,11 @@ exports.getStats = async (req, res) => {
     };
 
     // cache stats for 10 minutes
-    await redis.set(cacheKey, JSON.stringify(stats), "EX", 600);
+    try {
+      await redis.set(cacheKey, JSON.stringify(stats), "EX", 600);
+    } catch {
+      // Redis unavailable
+    }
 
     res.json(stats);
   } catch (err) {

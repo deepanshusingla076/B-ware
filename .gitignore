@@ -16,6 +16,7 @@ dist/
 Thumbs.db
 .vscode/
 .idea/
+.obsidian/
 *.suo
 *.ntvs*
 *.njsproj
@@ -29,6 +30,10 @@ yarn-error.log*
 lerna-debug.log*
 
 # ── Python (nlp-service) ─────────────────────────────────────────────────────
+.venv/
 venv/
 __pycache__/
 *.pyc
+.pytest_cache/
+*.egg-info/
+.mypy_cache/

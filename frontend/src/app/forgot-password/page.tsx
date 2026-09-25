@@ -44,7 +44,6 @@ export default function ForgotPasswordPage() {
           </Link>
 
           {state === 'success' ? (
-            // ── Success state ──
             <div className="text-center space-y-8">
               <div className="w-20 h-20 mx-auto bg-green-100 flex items-center justify-center">
                 <span className="material-symbols-outlined text-green-600 text-4xl">mark_email_read</span>
@@ -75,7 +74,6 @@ export default function ForgotPasswordPage() {
               </button>
             </div>
           ) : (
-            // ── Form state ──
             <>
               <div className="mb-10">
                 <div className="inline-block bg-surface-container-highest px-3 py-1 mb-6">

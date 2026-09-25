@@ -28,9 +28,9 @@ load_dotenv()
 logger = logging.getLogger("bware.nlp.tier3")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-# Groq API — Free tier, very fast, excellent reasoning (mixtral, llama models)
+# Groq API — model overridable via GROQ_MODEL (default is current production ID)
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODEL = "mixtral-8x7b-32768"  # Fast, good reasoning, free tier
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
 # Minimum verdict set the prompt enforces
 VALID_VERDICTS = {"accurate", "misleading", "false", "unverifiable"}

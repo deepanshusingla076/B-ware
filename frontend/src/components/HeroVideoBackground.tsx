@@ -109,7 +109,6 @@ export default function HeroVideoBackground() {
           }
         }
 
-        /* Smooth scrolling performance optimization */
         html {
           scroll-behavior: smooth;
         }

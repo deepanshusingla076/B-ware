@@ -79,7 +79,6 @@ function ProfileContent() {
     <main className="md:pl-64 pt-16 min-h-screen bg-background">
       <div className="max-w-5xl mx-auto px-6 py-12">
 
-        {/* ── Hero Card ── */}
         <section className="mb-10">
           <div className="bg-inverse-surface text-on-primary relative overflow-hidden">
             {/* Background pattern */}
@@ -178,7 +177,6 @@ function ProfileContent() {
           </div>
         </section>
 
-        {/* ── Stats Row ── */}
         <section className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
           {[
             { label: 'Total Verifications', value: stats?.total || 0, icon: 'verified', color: 'text-blue-600' },
@@ -203,7 +201,6 @@ function ProfileContent() {
         </section>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
-          {/* ── Recent Verifications ── */}
           <section className="lg:col-span-2 bg-surface-container-lowest border border-surface-container-high">
             <div className="flex items-center justify-between px-8 py-5 border-b border-surface-container-high">
               <h2 className="text-xs font-black uppercase tracking-widest text-on-surface">
@@ -265,7 +262,6 @@ function ProfileContent() {
             )}
           </section>
 
-          {/* ── Account Info Panel ── */}
           <section className="space-y-4">
             {/* Account details */}
             <div className="bg-surface-container-lowest border border-surface-container-high p-6">
@@ -332,7 +328,6 @@ function ProfileContent() {
           </section>
         </div>
 
-        {/* ── Footer meta ── */}
         <footer className="pt-8 border-t border-outline-variant/20 flex justify-between items-center opacity-30 text-[9px] uppercase tracking-[0.2em]">
           <span>© 2025 B-ware Forensic Division · Proprietary & Confidential</span>
           <span>AES-256-GCM Active</span>

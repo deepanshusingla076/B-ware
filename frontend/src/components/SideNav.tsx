@@ -11,7 +11,6 @@ const navItems = [
 ];
 
 const bottomItems = [
-  { href: "/settings", label: "Settings", icon: "settings" },
   { href: "/profile",  label: "Profile", icon: "account_circle" },
 ];
 
@@ -34,7 +33,7 @@ export default function SideNav() {
             Forensic Portal
           </span>
         </div>
-        <p className="text-[10px] uppercase tracking-widest text-on-surface-variant">Level 4 Access</p>
+        <p className="text-[10px] uppercase tracking-widest text-on-surface-variant">Claim verifier</p>
       </div>
 
       <Link
