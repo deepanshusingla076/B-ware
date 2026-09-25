@@ -234,8 +234,4 @@ pytest
 | Redis errors / degraded health | Start Redis on `localhost:6379` |
 | Trending looks empty | Re-run `start.bat` so demo seed is applied, or add news API keys |
 
----
 
-## License
-
-MIT
